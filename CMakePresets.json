@@ -1,0 +1,61 @@
+{
+    "version": 3,
+    "configurePresets": [
+        {
+            "name": "base-mingw",
+            "hidden": true,
+            "description": "Configuration commune pour MinGW",
+            "binaryDir": "${sourceDir}/build/${presetName}",
+            "cacheVariables": {
+                "CMAKE_C_COMPILER": "$env{MINGW64_HOME}/bin/gcc.exe",
+                "CMAKE_CXX_COMPILER": "$env{MINGW64_HOME}/bin/g++.exe",
+                "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+            }
+        },
+        {
+            "name": "mingw-debug",
+            "inherits": "base-mingw",
+            "displayName": "Debug: MinGW Makefiles",
+            "generator": "MinGW Makefiles",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug"
+            }
+        },
+        {
+            "name": "ninja-debug",
+            "inherits": "base-mingw",
+            "displayName": "Debug: Ninja",
+            "generator": "Ninja",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug"
+            }
+        },
+        {
+            "name": "github-windows-x64",
+            "description": "windows-x64 build for github runners",
+            "binaryDir": "${sourceDir}/build",
+            "displayName": "github-windows-x64",
+            "generator": "Ninja",
+            "cacheVariables": {
+                "CMAKE_C_COMPILER": "gcc.exe",
+                "CMAKE_CXX_COMPILER": "g++.exe",
+                "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+                "CMAKE_BUILD_TYPE": "Release"
+            }
+        }
+    ],
+    "buildPresets": [
+        {
+            "name": "mingw-debug",
+            "configurePreset": "mingw-debug"
+        },
+        {
+            "name": "ninja-debug",
+            "configurePreset": "ninja-debug"
+        },
+        {
+            "name": "github-windows-x64",
+            "configurePreset": "github-windows-x64"
+        }
+    ]
+}

@@ -1,0 +1,13 @@
+/FastNoise2
+/dependencies
+/target
+/ignore
+/build
+/obj
+/bin
+/.vscode
+
+*.dll
+*.exe
+*.zip
+
