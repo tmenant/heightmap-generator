@@ -10,6 +10,7 @@ set(BUILD_SHARED_LIBS OFF CACHE INTERNAL "force all external libs to build in st
 include(cmake/Dependencies.cmake)
 
 add_subdirectory(external/libspng)
+add_subdirectory(external/tinyexr)
 add_subdirectory(src)
 
 if(CMAKE_EXPORT_COMPILE_COMMANDS)
