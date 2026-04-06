@@ -1,8 +1,12 @@
 #pragma once
 
+#include <iostream>
+#include <ostream>
+#include <string>
 #define SPNG_STATIC
 
 #include <spng.h>
+#include <tinyexr.h>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -108,6 +112,36 @@ public:
         if (ret != 0)
         {
             throw std::runtime_error(std::format("Faile saving image, errcode={}", ret));
+        }
+    }
+
+    void saveToEXR(const std::string &filename) const
+    {
+        const int components = 4;
+
+        std::vector<float> floatData(_width * _height * components);
+
+        for (size_t i = 0; i < pixels.size(); i++)
+        {
+            floatData[i] = pixels[i] / 255.0f;
+        }
+
+        const int save_as_fp16 = 0; // 0 = 32-bit float (meilleure qualité), 1 = 16-bit float (fichier plus léger)
+        const char *err = nullptr;  // Pointeur pour récupérer le message d'erreur éventuel
+
+        int ret = SaveEXR(floatData.data(), _width, _height, components, save_as_fp16, filename.c_str(), &err);
+
+        if (ret != TINYEXR_SUCCESS)
+        {
+            if (err)
+            {
+                std::cerr << err << std::endl;
+                FreeEXRErrorMessage(err);
+            }
+            else
+            {
+                std::cerr << "Erreur inconnue lors de la sauvegarde EXR." << std::endl;
+            }
         }
     }
 

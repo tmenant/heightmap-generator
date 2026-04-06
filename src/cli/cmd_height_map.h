@@ -120,7 +120,7 @@ public:
             }
         }
 
-        rawNoiseImage.saveToPNG("ignore/heightmap_raw.png");
+        rawNoiseImage.saveToEXR("ignore/heightmap_raw.exr");
         colorNoiseImage.saveToPNG("ignore/heightmap_colored.png");
     }
 
