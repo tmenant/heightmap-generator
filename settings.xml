@@ -1,0 +1,13 @@
+<settings>
+
+    <exportResolution value="1024" />
+    <baseResolution value="2048" />
+    <seed value="1337" />
+
+    <waterLevel value="0.15" />
+    <elevationScale value="0.1" />
+
+    <baseNoise value="DQAJ@BCHE9KkAJBwAAMB1EED0KV78YZmZmPwQDUrgePwtxPYo/BA==" />
+    <landNoise value="BwAAMB1EED0KV78YZmZmPwQ=" />
+
+</settings>

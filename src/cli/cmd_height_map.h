@@ -3,113 +3,161 @@
 #include "FastNoise/FastNoise.h"
 #include "FastNoise/Utility/SmartNode.h"
 #include "command_manager.h"
+#include "core/color.h"
+#include "core/file.h"
 #include "core/logger.h"
 #include "core/random.h"
-#include "core/timer.h"
 #include "core/raw_image.h"
-#include "core/color.h"
+#include "core/timer.h"
+#include "fmt/base.h"
+#include <cstdint>
+#include <pugixml.hpp>
 #include <vector>
 
-class CmdHeightMap : public BaseCommand, public Loggable<CmdHeightMap>
+struct Settings
 {
-    int exportResolution = 1024 * 1;
-    int baseResolution = 2048;
+    std::string baseNoise = "";
+    std::string landNoise = "";
 
-    std::vector<float> heightMap;
+    int exportResolution = 2048;
+    int baseResolution = 1024;
+    int seed = 1337;
 
-    Random rand = Random(1337);
+    float elevationScale = 0.50f;
+    float waterLevel = 0.15f;
 
-public:
-    CLI::App *registerCommand(CLI::App &app) override
+    Settings(const std::string &filename)
     {
-        return app.add_subcommand("height-map", "");
-    }
+        auto buffer = File::readAllBytes(filename);
 
-    std::string readNode()
-    {
-        std::string path = "ignore/noise.txt";
-        std::ifstream file(path);
+        pugi::xml_document doc;
+        pugi::xml_parse_result result = doc.load_buffer(buffer.data(), buffer.size());
 
-        if (!file.is_open())
+        if (!result)
         {
-            std::cerr << "Erreur : Impossible d'ouvrir le fichier " << path << std::endl;
-            return "";
+            throw std::runtime_error("failed parsing tbx file");
         }
 
-        std::stringstream buffer;
-        buffer << file.rdbuf();
+        pugi::xml_node settingsNode = doc.child("settings");
 
-        std::string content = buffer.str();
+        baseResolution = settingsNode.child("baseResolution").attribute("value").as_int();
+        exportResolution = settingsNode.child("exportResolution").attribute("value").as_int();
+        seed = settingsNode.child("seed").attribute("value").as_int();
 
-        content.erase(content.find_last_not_of(" \n\r\t") + 1);
+        waterLevel = settingsNode.child("waterLevel").attribute("value").as_float();
+        elevationScale = settingsNode.child("elevationScale").attribute("value").as_float();
 
-        return content;
+        baseNoise = settingsNode.child("baseNoise").attribute("value").as_string();
+        landNoise = settingsNode.child("landNoise").attribute("value").as_string();
+    }
+};
+
+struct HeightMap
+{
+    Settings settings;
+
+    std::vector<float> baseNoise;
+    std::vector<float> landNoise;
+
+    Random rand;
+
+    int size = 0;
+
+    HeightMap(const Settings &settings) : settings(settings)
+    {
+        size = settings.exportResolution;
+
+        baseNoise.resize(size * size);
+        landNoise.resize(size * size);
+
+        if (settings.seed) rand = Random(settings.seed);
     }
 
-    void executeCommand(AppContext &appContext) override
+    void Generate()
     {
-        Timer timer;
+        generateBaseNoise();
+        generateLandNoise();
 
-        std::vector<float> noiseMap(exportResolution * exportResolution);
-        heightMap.resize(noiseMap.size());
+        saveColorMap("ignore/heightmap_colored.png");
+        saveHeightMap("C:/Users/menan/Documents/terrain-demo/heightmap_raw.exr");
+    }
 
-        std::string encodedNode = readNode();
-        auto smartNode = FastNoise::NewFromEncodedNodeTree(encodedNode.c_str());
+    void generateBaseNoise()
+    {
+        auto smartNode = FastNoise::NewFromEncodedNodeTree(settings.baseNoise.c_str());
 
-        float frequency = baseResolution / (float)exportResolution;
+        float frequency = settings.baseResolution / (float)settings.exportResolution;
 
-        smartNode->GenUniformGrid2D(noiseMap.data(), 0, 0, exportResolution, exportResolution, frequency, frequency, rand.nextInt32(0, INT32_MAX));
+        std::vector<float> noiseMap(size * size);
 
-        for (uint32_t x = 0; x < exportResolution; x++)
+        smartNode->GenUniformGrid2D(noiseMap.data(), 0, 0, size, size, frequency, frequency, rand.nextInt32(0, INT32_MAX));
+
+        for (uint32_t x = 0; x < size; x++)
         {
-            for (uint32_t y = 0; y < exportResolution; y++)
+            for (uint32_t y = 0; y < size; y++)
             {
-                int index = x + y * exportResolution;
+                int index = x + y * size;
 
                 float gradient = this->gradient(x, y);
                 float noise = noiseMap[index];
-                float normalized = std::clamp(0.5f * (noise + 1.f), 0.f, 1.f);
+                float normalized = normalize(noise);
                 float value = normalized * gradient;
 
-                heightMap[index] = value;
+                baseNoise[index] = value;
             }
         }
+    }
 
-        logger.info("heightMap created: {}", timer.elapsedSeconds());
+    void generateLandNoise()
+    {
+        auto smartNode = FastNoise::NewFromEncodedNodeTree(settings.landNoise.c_str());
 
-        saveToImage();
+        float frequency = settings.baseResolution / (float)settings.exportResolution;
 
-        logger.info("image created: {}", timer.elapsedSeconds());
+        std::vector<float> noiseMap(size * size);
+
+        int offsetX = 1024; // rand.nextInt32(0, INT32_MAX);
+        int offsetY = 1024; // rand.nextInt32(0, INT32_MAX);
+
+        smartNode->GenUniformGrid2D(noiseMap.data(), offsetX, offsetY, size, size, frequency, frequency, rand.nextInt32(0, INT32_MAX));
+
+        for (uint32_t x = 0; x < size; x++)
+        {
+            for (uint32_t y = 0; y < size; y++)
+            {
+                int index = x + y * size;
+
+                landNoise[index] = normalize(noiseMap[index]);
+            }
+        }
+    }
+
+    float normalize(float value)
+    {
+        return std::clamp(0.5f * (value + 1.f), 0.f, 1.f);
     }
 
     float gradient(int x, int y) const
     {
-        float nx = 2.f * x / exportResolution - 1.f;
-        float ny = 2.f * y / exportResolution - 1.f;
+        float nx = 2.f * x / size - 1.f;
+        float ny = 2.f * y / size - 1.f;
 
         float distance = std::sqrt(nx * nx + ny * ny);
 
         return std::clamp(1.f - distance, 0.f, 1.f);
     }
 
-    void saveToImage()
+    void saveColorMap(const std::string &filename)
     {
-        RawImage rawNoiseImage(exportResolution, exportResolution);
-        RawImage colorNoiseImage(exportResolution, exportResolution);
+        RawImage rawNoiseImage(size, size);
+        RawImage colorNoiseImage(size, size);
 
-        for (uint32_t x = 0; x < exportResolution; x++)
+        for (uint32_t x = 0; x < size; x++)
         {
-            for (uint32_t y = 0; y < exportResolution; y++)
+            for (uint32_t y = 0; y < size; y++)
             {
-                int index = x + y * exportResolution;
+                int index = x + y * size;
                 int offset = index * 4;
-
-                float greyScale = std::clamp(heightMap[index] * 255.f, 0.f, 255.f);
-
-                rawNoiseImage.pixels[offset + 0] = greyScale;
-                rawNoiseImage.pixels[offset + 1] = greyScale;
-                rawNoiseImage.pixels[offset + 2] = greyScale;
-                rawNoiseImage.pixels[offset + 3] = 255;
 
                 Color color = getColorAt(index);
 
@@ -120,8 +168,73 @@ public:
             }
         }
 
-        rawNoiseImage.saveToEXR("ignore/heightmap_raw.exr");
-        colorNoiseImage.saveToPNG("ignore/heightmap_colored.png");
+        colorNoiseImage.saveToPNG(filename);
+    }
+
+    void saveHeightMap(const std::string &filename)
+    {
+        const int components = 4;
+
+        std::vector<float> floatData(size * size * components);
+
+        for (uint32_t y = 0; y < size; y++)
+        {
+            for (uint32_t x = 0; x < size; x++)
+            {
+                int index = x + y * size;
+                int offset = index * 4;
+
+                float height = getHeightAt(index);
+
+                floatData[offset + 0] = height;
+                floatData[offset + 1] = height;
+                floatData[offset + 2] = height;
+                floatData[offset + 3] = 255;
+            }
+        }
+
+        const int save_as_fp16 = 0;
+        const char *err = nullptr;
+
+        int ret = SaveEXR(floatData.data(), size, size, components, save_as_fp16, filename.c_str(), &err);
+
+        if (ret != TINYEXR_SUCCESS)
+        {
+            if (err)
+            {
+                fmt::println("{}", err);
+                FreeEXRErrorMessage(err);
+            }
+            else
+            {
+                fmt::println("EXR error");
+            }
+        }
+    }
+
+    float inverseLerp(float a, float b, float value)
+    {
+        if (std::abs(a - b) < 0.00001f) return 0.0f;
+
+        float result = (value - a) / (b - a);
+
+        return std::clamp(result, 0.0f, 1.0f);
+    }
+
+    float getHeightAt(int index)
+    {
+        float mask = baseNoise[index];
+        float waterLevel = settings.waterLevel;
+
+        if (mask <= waterLevel)
+        {
+            return mask;
+        }
+
+        float landInfluence = inverseLerp(waterLevel, waterLevel + 0.2f, mask);
+        float elevation = landNoise[index] * settings.elevationScale;
+
+        return waterLevel + (elevation * landInfluence);
     }
 
     Color getColorAt(int index)
@@ -130,11 +243,32 @@ public:
         static constexpr Color colorDirt = { 91, 63, 21 };
         static constexpr Color colorGrass = { 75, 88, 27 };
 
-        if (heightMap[index] < 0.15f)
+        if (baseNoise[index] < settings.waterLevel)
         {
             return colorWater;
         }
 
         return colorGrass;
+    }
+};
+
+class CmdHeightMap : public BaseCommand, public Loggable<CmdHeightMap>
+{
+public:
+    CLI::App *registerCommand(CLI::App &app) override
+    {
+        return app.add_subcommand("height-map", "");
+    }
+
+    void executeCommand(AppContext &appContext) override
+    {
+        Timer timer;
+
+        Settings settings("settings.xml");
+        HeightMap heightMap(settings);
+
+        heightMap.Generate();
+
+        logger.info("heightMap created in {}ms", timer.elapsedMiliseconds());
     }
 };
